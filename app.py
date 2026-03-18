@@ -16,21 +16,21 @@ import os
 # --- 1. ตั้งค่าหน้าตาแอป ---
 st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- 2. ฟังก์ชันโหลด Assets ---
+# --- 2. โหลด Assets ---
 @st.cache_resource
 def load_assets():
     pipe_name = 'full_pipeline.pkl'
     model_name = 'xgboost_house_price_model.pkl'
 
-    # ตรวจสอบว่าไฟล์มีอยู่จริงไหม
+    # ตรวจสอบไฟล์ใน GitHub
     if not os.path.exists(pipe_name) or not os.path.exists(model_name):
-        st.error(f"❌ หาไฟล์โมเดลไม่เจอ! ตรวจสอบว่ามีไฟล์ {pipe_name} และ {model_name} ใน GitHub หรือยัง")
+        st.error(f"❌ หาไฟล์โมเดลไม่เจอ! ตรวจสอบชื่อไฟล์ใน GitHub")
         st.stop()
 
     pipeline = joblib.load(pipe_name)
     model = joblib.load(model_name)
 
-    # ล้างชื่อฟีเจอร์เพื่อป้องกัน Mismatch
+    # บังคับล้างชื่อฟีเจอร์ใน XGBoost เพื่อแก้ปัญหา f0, f1 mismatch
     try:
         model.get_booster().feature_names = None
     except:
@@ -38,17 +38,15 @@ def load_assets():
 
     return pipeline, model
 
-# เรียกใช้งานฟังก์ชันโหลดโมเดล
 try:
     full_pipeline, xgb_model = load_assets()
 except Exception as e:
     st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
-    st.info("สาเหตุส่วนใหญ่เกิดจากเวอร์ชันของ scikit-learn ไม่ตรงกัน ลองเช็ค requirements.txt")
+    st.info("ตรวจสอบเวอร์ชัน scikit-learn ใน requirements.txt")
     st.stop()
 
-# --- 3. ส่วน UI ---
-st.title("🏠 ระบบประเมินราคาที่พักอาศัย (California)")
-st.markdown("ระบุข้อมูลด้านซ้ายเพื่อพยากรณ์ราคา")
+# --- 3. UI ส่วนรับข้อมูล ---
+st.title("🏠 ระบบประเมินราคาที่พักอาศัย")
 
 with st.sidebar:
     st.header("📍 ระบุข้อมูล")
@@ -59,13 +57,13 @@ with st.sidebar:
     total_bedrooms = st.number_input("ห้องนอนทั้งหมด", value=130.0)
     population = st.number_input("ประชากร", value=320.0)
     households = st.number_input("ครัวเรือน", value=120.0)
-    median_income = st.number_input("รายได้เฉลี่ย (หลักหมื่นเหรียญ)", value=8.3)
+    median_income = st.number_input("รายได้เฉลี่ย", value=8.3)
     ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
 
-# --- 4. ปุ่มคำนวณ ---
-if st.button("🚀 คำนวณราคาประเมิน"):
+# --- 4. ส่วนคำนวณ (จุดที่แก้ Feature Mismatch) ---
+if st.button("🚀 คำนวณราคา"):
     try:
-        # เตรียมข้อมูลดิบ
+        # 1. สร้าง Data 12 คอลัมน์ตามที่ Pipeline ต้องการ
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income,
@@ -78,17 +76,17 @@ if st.button("🚀 คำนวณราคาประเมิน"):
             'ocean_proximity'
         ])
 
-        # แปลงข้อมูลด้วย Pipeline
+        # 2. ให้ Pipeline แปลง 12 คอลัมน์ -> 16 คอลัมน์ (หัวใจสำคัญ!)
         X_prepared = full_pipeline.transform(input_df)
+
+        # 3. แปลงเป็น Numpy Array เพื่อความชัวร์
         X_prepared_flat = np.array(X_prepared)
 
-        # ทำนายผล
+        # 4. ทำนายผล
         prediction = xgb_model.predict(X_prepared_flat)[0]
 
-        # แสดงผลลัพธ์
         st.balloons()
-        st.success("### 🎉 คำนวณสำเร็จ!")
-        st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
+        st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
 
     except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาดขณะคำนวณ: {e}")
+        st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
