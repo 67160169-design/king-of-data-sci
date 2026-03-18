@@ -10,94 +10,66 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import joblib
+import xgboost as xgb
 
-# --- การตั้งค่าหน้าตาแอป ---
-st.set_page_config(
-    page_title="California Housing Predictor",
-    page_icon="🏠",
-    layout="wide"
-)
+# --- 1. ตั้งค่าหน้าตาแอป ---
+st.set_page_config(page_title="California Housing Predictor", page_icon="🏠", layout="wide")
 
-# --- โหลด Model ---
+# --- 2. โหลด Full Pipeline (สำคัญมาก: ต้องใช้ไฟล์ full_pipeline.pkl) ---
 @st.cache_resource
-def load_models():
-    # โหลดโมเดลจากไฟล์ที่คุณอัปโหลด
-    model = joblib.load('xgboost_house_price_model.pkl')
+def load_all_in_one():
+    # เราจะใช้ไฟล์นี้เพราะมันรวมทั้งการสเกลข้อมูลและ XGBoost ไว้ด้วยกันครับ
+    model = joblib.load('full_pipeline.pkl')
     return model
 
 try:
-    full_pipeline_model = load_models()
+    pipeline = load_all_in_one()
 except Exception as e:
-    st.error(f"⚠️ ไม่พบไฟล์โมเดล: {e}")
+    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
 
-# --- ส่วนของ Sidebar ---
-st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
+# --- 3. ส่วน UI สำหรับกรอกข้อมูล ---
+st.title("🏠 ระบบประเมินราคาที่พักอาศัย (California)")
+st.sidebar.header("📍 ระบุข้อมูลที่พัก")
 
 with st.sidebar:
-    st.subheader("พิกัดและอายุบ้าน")
-    longitude = st.number_input("Longitude", value=-122.23, format="%.2f")
-    latitude = st.number_input("Latitude", value=37.88, format="%.2f")
-    housing_median_age = st.slider("อายุเฉลี่ยของบ้าน (ปี)", 1, 52, 30)
-
-    st.subheader("รายละเอียดอาคาร")
+    longitude = st.number_input("Longitude", value=-122.23)
+    latitude = st.number_input("Latitude", value=37.88)
+    housing_median_age = st.slider("อายุบ้าน (ปี)", 1, 52, 30)
     total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=800)
     total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=130)
-    population = st.number_input("จำนวนประชากรในพื้นที่", value=320)
+    population = st.number_input("จำนวนประชากร", value=320)
     households = st.number_input("จำนวนครัวเรือน", value=120)
+    median_income = st.number_input("รายได้เฉลี่ย (x$10k)", value=8.3)
+    ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
 
-    st.subheader("เศรษฐกิจและทำเล")
-    median_income = st.number_input("รายได้เฉลี่ย (x $10,000)", value=8.3, format="%.2f")
-    # ตัวเลือกทำเลตามชุดข้อมูล California Housing
-    ocean_proximity = st.selectbox(
-        "ทำเลที่ตั้ง",
-        ['<1H OCEAN', 'INLAND', 'ISLAND', 'NEAR BAY', 'NEAR OCEAN']
-    )
+# --- 4. ปุ่มคำนวณและประมวลผล ---
+if st.button("🚀 คำนวณราคาประเมิน", use_container_width=True):
+    # เตรียม DataFrame ให้มีคอลัมน์เหมือนตอน Train เป๊ะๆ
+    input_df = pd.DataFrame([[
+        longitude, latitude, housing_median_age, total_rooms,
+        total_bedrooms, population, households, median_income, ocean_proximity
+    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
+                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
 
-# --- ส่วนแสดงผลหลัก ---
-st.title("🏠 ระบบประเมินราคาที่พักอาศัยในแคลิฟอร์เนีย")
-st.markdown("---")
+    # ทำ Feature Engineering เพิ่มเติม (เพื่อให้ครบ 12 ฟีเจอร์ตามที่โมเดลต้องการ)
+    input_df["rooms_per_household"] = input_df["total_rooms"] / input_df["households"]
+    input_df["bedrooms_per_room"] = input_df["total_bedrooms"] / input_df["total_rooms"]
+    input_df["population_per_household"] = input_df["population"] / input_df["households"]
 
-col1, col2 = st.columns(2)
+    # จัดเรียงคอลัมน์ให้ตรงตามลำดับ Pipeline (12 ตัว)
+    column_order = [
+        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+        'total_bedrooms', 'population', 'households', 'median_income',
+        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+        'ocean_proximity'
+    ]
+    input_df = input_df[column_order]
 
-with col1:
-    st.info("📊 **ข้อมูลที่คุณกรอก:**")
-    display_data = {
-        "พิกัด": f"{latitude}, {longitude}",
-        "อายุบ้าน": f"{housing_median_age} ปี",
-        "รายได้เฉลี่ย": f"${median_income*10000:,.0f}",
-        "ทำเล": ocean_proximity
-    }
-    st.json(display_data)
+    try:
+        # ทำนายผล (Pipeline จะจัดการ One-Hot ให้เองอัตโนมัติ)
+        prediction = pipeline.predict(input_df)[0]
 
-with col2:
-    st.warning("🚀 **การประมวลผล:**")
-    if st.button("คำนวณราคาประเมินเดี๋ยวนี้", use_container_width=True):
-
-        # 1. สร้าง DataFrame พร้อมคำนวณฟีเจอร์ใหม่ให้ครบ 12 คอลัมน์
-        data = {
-            'longitude': [float(longitude)],
-            'latitude': [float(latitude)],
-            'housing_median_age': [float(housing_median_age)],
-            'total_rooms': [float(total_rooms)],
-            'total_bedrooms': [float(total_bedrooms)],
-            'population': [float(population)],
-            'households': [float(households)],
-            'median_income': [float(median_income)],
-            'rooms_per_household': [float(total_rooms / households)],
-            'bedrooms_per_room': [float(total_bedrooms / total_rooms)],
-            'population_per_household': [float(population / households)],
-            'ocean_proximity': [ocean_proximity]
-        }
-
-        input_df = pd.DataFrame(data)
-
-        # 2. แก้ไขจุดที่เป็น Error: แปลง ocean_proximity ให้เป็น 'category' ตามที่ XGBoost ต้องการ
-        input_df['ocean_proximity'] = input_df['ocean_proximity'].astype('category')
-
-        try:
-            # 3. ทำนายผล
-            prediction = full_pipeline_model.predict(input_df)[0]
-
-            st.balloons()
-            st.success("### 🎉 ผลการวิเคราะห์")
-            st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
+        st.balloons()
+        st.success(f"### 🎉 ราคาประเมินคือ: ${prediction:,.2f}")
+    except Exception as e:
+        st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
