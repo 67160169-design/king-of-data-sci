@@ -14,19 +14,25 @@ import joblib
 # --- 1. ตั้งค่าหน้าตาแอป ---
 st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- 2. โหลด Full Pipeline ---
+# --- 2. โหลด Full Pipeline (ตัวนี้สำคัญที่สุด) ---
 @st.cache_resource
 def load_pipeline():
-    # ไฟล์นี้รวมทุกอย่างไว้แล้ว ทั้งตัวแปลงข้อมูลและตัวทำนาย
+    # โหลดไฟล์ pipeline ที่รวมทั้ง StandardScaler และ OneHotEncoder ไว้แล้ว
     return joblib.load('full_pipeline.pkl')
+
+@st.cache_resource
+def load_model():
+    # โหลดตัวโมเดล XGBoost
+    return joblib.load('xgboost_house_price_model.pkl')
 
 try:
     pipeline = load_pipeline()
+    model = load_model()
 except Exception as e:
-    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
+    st.error(f"❌ โหลดไฟล์ไม่สำเร็จ: {e}")
     st.stop()
 
-# --- 3. UI รับข้อมูลดิบ 9 ตัว ---
+# --- 3. UI รับข้อมูล ---
 st.title("🏠 ระบบประเมินราคาที่พักอาศัย")
 st.sidebar.header("📍 ระบุข้อมูล")
 
@@ -41,22 +47,31 @@ with st.sidebar:
     median_income = st.number_input("รายได้เฉลี่ย", value=8.3)
     ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
 
-# --- 4. ส่งข้อมูลให้ Pipeline ทำนาย ---
+# --- 4. ปุ่มคำนวณ ---
 if st.button("🚀 คำนวณราคา"):
-    # ส่งแค่ 9 คอลัมน์เดิมๆ ที่ได้จากหน้าจอเลยครับ
-    # ตัว Pipeline จะไปสร้าง 'rooms_per_household' ฯลฯ ให้เองข้างใน
+    # สร้าง DataFrame 12 คอลัมน์ตามที่ Pipeline ใน Colab ของคุณเคยได้รับ
     input_df = pd.DataFrame([[
         longitude, latitude, housing_median_age, total_rooms,
-        total_bedrooms, population, households, median_income, ocean_proximity
-    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
-                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
+        total_bedrooms, population, households, median_income,
+        (total_rooms / households), (total_bedrooms / total_rooms), (population / households),
+        ocean_proximity
+    ]], columns=[
+        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+        'total_bedrooms', 'population', 'households', 'median_income',
+        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+        'ocean_proximity'
+    ])
 
     try:
-        # Pipeline จะจัดการ Preprocessing + XGBoost ให้จบในบรรทัดเดียว
-        prediction = pipeline.predict(input_df)[0]
+        # ขั้นตอนสำคัญ:
+        # 1. ใช้ pipeline แปลงร่างข้อมูลจาก 12 -> 16 คอลัมน์
+        X_prepared = pipeline.transform(input_df)
+
+        # 2. ใช้โมเดล XGBoost ทำนายจากข้อมูลที่เตรียมเสร็จแล้ว
+        prediction = model.predict(X_prepared)[0]
 
         st.balloons()
         st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
+
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
-        st.info("ถ้ายัง Error เรื่อง feature_names ให้ลองเช็คว่าใน Colab ตอนสั่ง pipeline.fit(X, y) ตัว X มีกี่คอลัมน์ครับ")
