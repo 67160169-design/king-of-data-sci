@@ -14,20 +14,15 @@ import joblib
 # --- 1. ตั้งค่าหน้าตาแอป ---
 st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- 2. โหลด Full Pipeline (ตัวนี้สำคัญที่สุด) ---
+# --- 2. โหลด Full Pipeline ---
+# เราจะใช้แค่ตัวเดียวพอ เพราะใน Pipeline มันมี XGBoost ฝังอยู่ข้างในแล้วครับ
 @st.cache_resource
 def load_pipeline():
-    # โหลดไฟล์ pipeline ที่รวมทั้ง StandardScaler และ OneHotEncoder ไว้แล้ว
+    # ไฟล์นี้คือตัวเอกของเราครับ
     return joblib.load('full_pipeline.pkl')
-
-@st.cache_resource
-def load_model():
-    # โหลดตัวโมเดล XGBoost
-    return joblib.load('xgboost_house_price_model.pkl')
 
 try:
     pipeline = load_pipeline()
-    model = load_model()
 except Exception as e:
     st.error(f"❌ โหลดไฟล์ไม่สำเร็จ: {e}")
     st.stop()
@@ -49,7 +44,7 @@ with st.sidebar:
 
 # --- 4. ปุ่มคำนวณ ---
 if st.button("🚀 คำนวณราคา"):
-    # สร้าง DataFrame 12 คอลัมน์ตามที่ Pipeline ใน Colab ของคุณเคยได้รับ
+    # สร้าง DataFrame 12 คอลัมน์ให้ตรงตามที่ Pipeline ต้องการ
     input_df = pd.DataFrame([[
         longitude, latitude, housing_median_age, total_rooms,
         total_bedrooms, population, households, median_income,
@@ -63,12 +58,9 @@ if st.button("🚀 คำนวณราคา"):
     ])
 
     try:
-        # ขั้นตอนสำคัญ:
-        # 1. ใช้ pipeline แปลงร่างข้อมูลจาก 12 -> 16 คอลัมน์
-        X_prepared = pipeline.transform(input_df)
-
-        # 2. ใช้โมเดล XGBoost ทำนายจากข้อมูลที่เตรียมเสร็จแล้ว
-        prediction = model.predict(X_prepared)[0]
+        # ใช้ pipeline.predict (ห้ามใช้ model.predict)
+        # ตัวนี้จะทำหน้าที่แปลงร่างข้อมูลจาก 12 -> 16 คอลัมน์ให้เราเอง
+        prediction = pipeline.predict(input_df)[0]
 
         st.balloons()
         st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
