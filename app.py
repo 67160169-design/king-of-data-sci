@@ -7,91 +7,11 @@ Original file is located at
     https://colab.research.google.com/drive/1LBDGqowg2x_WeRphGis5nStBpKczC4ca
 """
 
-import streamlit as st
-import pandas as pd
-import joblib
-import numpy as np
-import os
+# --- แก้ไขส่วนนี้ใน app.py ---
 
-# --- 1. ตั้งค่าหน้าตาแอป (Modern Config) ---
-st.set_page_config(
-    page_title="California Housing Predictor",
-    page_icon="🏠",
-    layout="wide"
-)
-
-# Custom CSS เพื่อความสวยงาม
-st.markdown("""
-    <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
-        background-color: #ff4b4b;
-        color: white;
-    }
-    .result-card {
-        padding: 20px;
-        border-radius: 10px;
-        background-color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. โหลด Assets ---
-@st.cache_resource
-def load_assets():
-    pipe_name = 'full_pipeline.pkl'
-    model_name = 'xgboost_house_price_model.pkl'
-
-    if not os.path.exists(pipe_name) or not os.path.exists(model_name):
-        st.error(f"❌ ไม่พบไฟล์โมเดลใน Repository")
-        st.stop()
-
-    pipeline = joblib.load(pipe_name)
-    model = joblib.load(model_name)
-
+if st.button("🚀 คำนวณราคา"):
     try:
-        model.get_booster().feature_names = None
-    except:
-        pass
-    return pipeline, model
-
-full_pipeline, xgb_model = load_assets()
-
-# --- 3. ส่วน UI ---
-st.title("🏠 California House Price Predictor")
-st.markdown("ระบบพยากรณ์ราคาบ้านในแคลิฟอร์เนียด้วย Machine Learning (XGBoost)")
-st.divider()
-
-# สร้าง 2 คอลัมน์สำหรับ Input
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📍 ข้อมูลทำเลที่ตั้ง")
-    longitude = st.number_input("ลองจิจูด (Longitude)", value=-122.23, format="%.2f")
-    latitude = st.number_input("ละติจูด (Latitude)", value=37.88, format="%.2f")
-    ocean_proximity = st.selectbox("ทำเลที่ตั้ง (Ocean Proximity)",
-                                  ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
-
-with col2:
-    st.subheader("🏘️ ข้อมูลตัวบ้านและสังคม")
-    median_income = st.slider("รายได้เฉลี่ย (Median Income - $10k)", 0.5, 15.0, 8.3)
-    housing_median_age = st.number_input("อายุบ้านเฉลี่ย (ปี)", value=41)
-    total_rooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=880)
-    total_bedrooms = st.number_input("จำนวนห้องน้ำทั้งหมด", value=129)
-    population = st.number_input("จำนวนประชากรในพื้นที่", value=322)
-    households = st.number_input("จำนวนครัวเรือน", value=126)
-
-# --- 4. ส่วนคำนวณ ---
-st.divider()
-if st.button("🚀 วิเคราะห์ราคาบ้าน"):
-    try:
-        # เตรียมข้อมูล
+        # 1. เตรียมข้อมูล 12 คอลัมน์ (เหมือนเดิม)
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income,
@@ -104,18 +24,18 @@ if st.button("🚀 วิเคราะห์ราคาบ้าน"):
             'ocean_proximity'
         ])
 
-        # Pipeline Transformation & Prediction
+        # 2. ใช้ Pipeline แปลงข้อมูล (จะได้ 16 คอลัมน์)
         X_prepared = full_pipeline.transform(input_df)
+
+        # 3. [จุดสำคัญ] แปลงเป็น Numpy Array เพื่อไม่ให้โมเดลเช็คชื่อคอลัมน์ (แก้ปัญหา f0, f1... mismatch)
+        if hasattr(X_prepared, "toarray"): # เผื่อกรณีเป็น Sparse Matrix
+            X_prepared = X_prepared.toarray()
+
+        # 4. พยากรณ์โดยส่งค่าเป็น Array
         prediction = xgb_model.predict(X_prepared)[0]
 
-        # แสดงผลลัพธ์แบบสวยงาม
-        st.balloons()
-        st.markdown(f"""
-            <div class="result-card">
-                <h3 style='text-align: center; color: #1f77b4;'>ราคาประเมินที่ได้</h3>
-                <h1 style='text-align: center; color: #ff4b4b;'>${prediction:,.2f}</h1>
-            </div>
-        """, unsafe_allow_html=True)
+        # แสดงผล
+        st.success(f"ราคาบ้านประเมินคือ: ${prediction:,.2f}")
 
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
+        st.error(f"Error: {e}")
