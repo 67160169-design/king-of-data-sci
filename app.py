@@ -7,11 +7,20 @@ Original file is located at
     https://colab.research.google.com/drive/1LBDGqowg2x_WeRphGis5nStBpKczC4ca
 """
 
-# --- แก้ไขส่วนนี้ใน app.py ---
+# --- 1. ปรับตอนโหลดโมเดล (เพิ่มการล้างชื่อฟีเจอร์) ---
+@st.cache_resource
+def load_assets():
+    pipeline = joblib.load('full_pipeline.pkl')
+    model = joblib.load('xgboost_house_price_model.pkl')
 
-if st.button("🚀 คำนวณราคา"):
+    # ล้างชื่อฟีเจอร์ออกให้หมด เพื่อป้องกัน Error f0, f1...
+    model.get_booster().feature_names = None
+    return pipeline, model
+
+# --- 2. ปรับตอนทำ Prediction ---
+if st.button("🚀 วิเคราะห์ราคาบ้าน"):
     try:
-        # 1. เตรียมข้อมูล 12 คอลัมน์ (เหมือนเดิม)
+        # เตรียมข้อมูล (เหมือนเดิม)
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income,
@@ -24,18 +33,21 @@ if st.button("🚀 คำนวณราคา"):
             'ocean_proximity'
         ])
 
-        # 2. ใช้ Pipeline แปลงข้อมูล (จะได้ 16 คอลัมน์)
+        # แปลงข้อมูลผ่าน Pipeline
         X_prepared = full_pipeline.transform(input_df)
 
-        # 3. [จุดสำคัญ] แปลงเป็น Numpy Array เพื่อไม่ให้โมเดลเช็คชื่อคอลัมน์ (แก้ปัญหา f0, f1... mismatch)
-        if hasattr(X_prepared, "toarray"): # เผื่อกรณีเป็น Sparse Matrix
+        # แปลงเป็น Numpy Array เพื่อความชัวร์ 100% ว่าไม่มีชื่อคอลัมน์ติดไป
+        if hasattr(X_prepared, "toarray"):
             X_prepared = X_prepared.toarray()
+        else:
+            X_prepared = np.array(X_prepared)
 
-        # 4. พยากรณ์โดยส่งค่าเป็น Array
+        # ทำนายผล
         prediction = xgb_model.predict(X_prepared)[0]
 
-        # แสดงผล
-        st.success(f"ราคาบ้านประเมินคือ: ${prediction:,.2f}")
+        # แสดงผลลัพธ์ (แบบตกแต่งสวยๆ)
+        st.balloons()
+        st.success(f"### ผลการประเมิน: ${prediction:,.2f}")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"เกิดข้อผิดพลาด: {e}")
