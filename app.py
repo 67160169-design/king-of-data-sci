@@ -7,13 +7,19 @@ Original file is located at
     https://colab.research.google.com/drive/1LBDGqowg2x_WeRphGis5nStBpKczC4ca
 """
 
-if st.button("🚀 วิเคราะห์ราคาบ้าน"):
+if st.button("🚀 คำนวณราคา"):
     try:
-        # 1. ส่งเฉพาะข้อมูล "ดิบ" 9 ตัว (ตามที่เทรนมาตอนแรก)
-        # ไม่ต้องคำนวณหารเอง เพราะ Pipeline จะทำให้ครับ
+        # 1. สร้าง DataFrame จากข้อมูลดิบ "เท่าที่จำเป็น"
+        # (อิงตามฟีเจอร์เริ่มต้นของ California Housing Dataset)
         raw_data = pd.DataFrame([[
-            longitude, latitude, housing_median_age, total_rooms,
-            total_bedrooms, population, households, median_income,
+            longitude,
+            latitude,
+            housing_median_age,
+            total_rooms,
+            total_bedrooms,
+            population,
+            households,
+            median_income,
             ocean_proximity
         ]], columns=[
             'longitude', 'latitude', 'housing_median_age', 'total_rooms',
@@ -21,25 +27,23 @@ if st.button("🚀 วิเคราะห์ราคาบ้าน"):
             'ocean_proximity'
         ])
 
-        # 2. ให้ Pipeline แปลงร่างข้อมูล (มันจะสร้างคอลัมน์หาร และ One-hot ให้เองจนครบ 16)
+        # 2. ให้ Pipeline คำนวณ Ratio ต่างๆ และทำ One-hot ให้เอง
+        # (วิธีนี้จะทำให้ Feature names และ Order ตรงกับตอน Fit เป๊ะ)
         X_prepared = full_pipeline.transform(raw_data)
 
-        # 3. แปลงเป็น Array เพื่อคุยกับ XGBoost
+        # 3. แปลงเป็น Array เพื่อความปลอดภัยก่อนส่งให้ XGBoost
         if hasattr(X_prepared, "toarray"):
             X_prepared = X_prepared.toarray()
 
-        # 4. Predict
+        # 4. พยากรณ์ผล
         prediction = xgb_model.predict(X_prepared)[0]
 
-        # --- แสดงผลแบบสวยๆ ---
+        # --- แสดงผลลัพธ์ ---
         st.balloons()
-        st.markdown(f"""
-            <div style="background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid #ff4b4b; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
-                <h3 style="margin:0; color: #555;">ราคาประเมินที่ได้:</h3>
-                <h1 style="margin:0; color: #ff4b4b;">${prediction:,.2f}</h1>
-            </div>
-        """, unsafe_allow_html=True)
+        st.success(f"### ราคาประเมิน: ${prediction:,.2f}")
 
     except Exception as e:
+        # ถ้ายัง Error ให้โชว์ว่า Pipeline ต้องการ Column ชื่ออะไรบ้าง จะได้แก้ถูกจุด
         st.error(f"เกิดข้อผิดพลาด: {e}")
-        st.info("ลองตรวจสอบว่ากรอกตัวเลขครบทุกช่องหรือยังครับ")
+        if "feature_names_in_" in dir(full_pipeline):
+            st.info(f"Pipeline คาดหวังคอลัมน์: {full_pipeline.feature_names_in_}")
