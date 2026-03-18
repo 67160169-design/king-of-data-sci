@@ -9,130 +9,110 @@ Original file is located at
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import joblib
-import time
 
-# ===== 1. การตั้งค่าหน้าเว็บ (Modern UI) =====
+# --- การตั้งค่าหน้าตาแอป ---
 st.set_page_config(
-    page_title="California House Price Predictor",
+    page_title="California Housing Predictor",
     page_icon="🏠",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Custom CSS เพื่อความสวยงาม
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button {
-        width: 100%;
-        border-radius: 10px;
-        height: 3em;
-        background-color: #FF4B4B;
-        color: white;
-        font-weight: bold;
-    }
-    .result-card {
-        background-color: white;
-        padding: 2rem;
-        border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        text-align: center;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# ===== 2. โหลดโมเดลและพิกัดข้อมูล =====
+# --- โหลด Pipeline และ Model (ปรับชื่อไฟล์ให้ตรงกับของคุณ) ---
 @st.cache_resource
-def load_artifacts():
-    # โหลดทั้ง Model และ Pipeline ที่ใช้แปลงข้อมูล
-    model = joblib.load("xgboost_house_price_model.pkl")
-    pipeline = joblib.load("full_pipeline.pkl") # ต้องเซฟไฟล์นี้ออกมาจาก notebook ก่อนนะครับ
-    return model, pipeline
+def load_models():
+    # สมมติว่าคุณเซฟรวมไว้ในไฟล์เดียว หรือแยกกัน
+    # pipeline = joblib.load('full_pipeline.pkl')
+    # model = joblib.load('final_model.pkl')
+    # ในที่นี้ขอยกตัวอย่างแบบโหลดตัวแปรเดียวที่รวมทุกอย่างไว้
+    model = joblib.load('xgboost_house_price_model.pkl')
+    return model
 
 try:
-    model, pipeline = load_artifacts()
+    full_pipeline_model = load_models()
 except:
-    st.error("❌ ไม่พบไฟล์โมเดลหรือพิกัด (Pipeline) กรุณาตรวจสอบว่ามีไฟล์ .pkl อยู่ใน Folder เดียวกัน")
-    st.stop()
+    st.error("⚠️ ไม่พบไฟล์โมเดล! กรุณาตรวจสอบว่ามีไฟล์ .pkl ใน Repository แล้ว")
 
-# ===== 3. Sidebar: ข้อมูลประกอบ =====
+# --- ส่วนของ Sidebar (แถบด้านข้างสำหรับกรอกข้อมูล) ---
+st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
+
 with st.sidebar:
-    st.image("https://img.icons8.com/clouds/200/home.png")
-    st.title("เมนูการใช้งาน")
-    st.info("""
-    แอปนี้ใช้โมเดล **XGBoost** ในการพยากรณ์ราคาบ้านใน California
-    โดยคำนวณจากปัจจัยด้านทำเล, รายได้ประชากร และลักษณะของที่อยู่อาศัย
-    """)
-    st.divider()
-    st.caption("พัฒนาโดย Machine Learning Model v1.0")
+    st.subheader("พิกัดและอายุบ้าน")
+    longitude = st.number_input("Longitude", value=-122.23, format="%.2f")
+    latitude = st.number_input("Latitude", value=37.88, format="%.2f")
+    housing_median_age = st.slider("อายุเฉลี่ยของบ้าน (ปี)", 1, 52, 30)
 
-# ===== 4. หน้าจอหลัก (Input Panel) =====
-st.title("🏠 ระบบประเมินราคาอสังหาริมทรัพย์ California")
-st.write("กรุณากรอกข้อมูลลักษณะบ้านและทำเลที่ตั้งเพื่อรับการประเมินราคา")
+    st.subheader("รายละเอียดอาคาร")
+    total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=800)
+    total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=130)
+    population = st.number_input("จำนวนประชากรในพื้นที่", value=320)
+    households = st.number_input("จำนวนครัวเรือน", value=120)
 
-# แบ่งเป็น 2 คอลัมน์หลัก
-col1, col2 = st.columns([1, 1], gap="medium")
+    st.subheader("เศรษฐกิจและทำเล")
+    median_income = st.number_input("รายได้เฉลี่ย (x $10,000)", value=8.3, format="%.2f")
+    ocean_proximity = st.selectbox(
+        "ทำเลที่ตั้ง",
+        ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND']
+    )
+
+# --- ส่วนแสดงผลหลัก ---
+st.title("🏠 ระบบประเมินราคาที่พักอาศัยในแคลิฟอร์เนีย")
+st.markdown("""
+แอปพลิเคชันนี้ใช้โมเดล Machine Learning ในการทำนายราคาบ้าน
+โดยคำนวณจากปัจจัยทางภูมิศาสตร์ ประชากร และรายได้ในพื้นที่นั้นๆ
+---
+""")
+
+# สร้าง Layout แบบ 2 คอลัมน์สำหรับแสดงข้อมูลสรุป
+col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📍 ทำเลที่ตั้งและรายได้")
-    with st.container(border=True):
-        longitude = st.number_input("ลองจิจูด (Longitude)", value=-122.23, format="%.2f")
-        latitude = st.number_input("ละติจูด (Latitude)", value=37.88, format="%.2f")
-        median_income = st.slider("รายได้เฉลี่ยประชากร (Median Income - $10k)", 0.5, 15.0, 3.5, step=0.1)
-        ocean_proximity = st.selectbox("ทำเลที่ตั้งใกล้ทะเล",
-                                      ['<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'NEAR BAY', 'ISLAND'])
+    st.info("📊 **ข้อมูลที่คุณกรอก:**")
+    display_data = {
+        "พิกัด": f"{latitude}, {longitude}",
+        "อายุบ้าน": f"{housing_median_age} ปี",
+        "รายได้เฉลี่ย": f"${median_income*10000:,.0f}",
+        "ทำเล": ocean_proximity
+    }
+    st.json(display_data)
 
 with col2:
-    st.subheader("🏗️ ลักษณะของอาคาร")
-    with st.container(border=True):
-        housing_median_age = st.number_input("อายุบ้านเฉลี่ย (ปี)", min_value=1, max_value=100, value=20)
-        total_rooms = st.number_input("จำนวนห้องทั้งหมดในบล็อก", value=1000)
-        total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=200)
-        population = st.number_input("จำนวนประชากรในพื้นที่", value=500)
-        households = st.number_input("จำนวนครัวเรือน", value=150)
-
-# ===== 5. ส่วนการประมวลผลพยากรณ์ =====
-st.divider()
-
-if st.button("🚀 เริ่มการประมวลผลราคา"):
-    with st.spinner('กำลังวิเคราะห์ข้อมูลด้วย AI...'):
-        time.sleep(1) # เพิ่มเพื่อให้ดูเหมือนกำลังคิด (UX)
-
-        # 1. รวมข้อมูลเข้า DataFrame
+    st.warning("🚀 **การประมวลผล:**")
+    if st.button("คำนวณราคาประเมินเดี๋ยวนี้", use_container_width=True):
+        # 1. สร้าง DataFrame
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income, ocean_proximity
         ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
                      'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
 
-        # 2. Feature Engineering (ต้องทำให้เหมือนตอนเทรน)
+        # 2. Feature Engineering
         input_df["rooms_per_household"] = input_df["total_rooms"] / input_df["households"]
         input_df["bedrooms_per_room"] = input_df["total_bedrooms"] / input_df["total_rooms"]
         input_df["population_per_household"] = input_df["population"] / input_df["households"]
 
-        # 3. แปลงข้อมูลผ่าน Pipeline (Scaling & Encoding)
+        # 3. จัดลำดับคอลัมน์
+        order = [
+            'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+            'total_bedrooms', 'population', 'households', 'median_income',
+            'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+            'ocean_proximity'
+        ]
+        input_df = input_df[order]
+
+        # 4. ทำนายผล
         try:
-            input_prepared = pipeline.transform(input_df)
+            # ใช้ pipeline หรือ model ทำนาย (ปรับตามความเหมาะสมของไฟล์ .pkl คุณ)
+            prediction = full_pipeline_model.predict(input_df)[0]
 
-            # 4. พยากรณ์
-            prediction = model.predict(input_prepared)[0]
-
-            # 5. แสดงผลลัพธ์แบบสวยงาม
-            st.markdown(f"""
-                <div class="result-card">
-                    <h2 style='color: #555;'>ราคาประเมินที่เหมาะสมคือ</h2>
-                    <h1 style='color: #FF4B4B; font-size: 3.5rem;'>${prediction:,.2f}</h1>
-                    <p style='color: #888;'>อ้างอิงจากฐานข้อมูล California Housing Market</p>
-                </div>
-            """, unsafe_allow_html=True)
             st.balloons()
+            st.success("### 🎉 ผลการวิเคราะห์")
+            st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
 
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
-            st.info("คำแนะนำ: ตรวจสอบว่าคอลัมน์ใน Pipeline ตรงกับตอนเทรนหรือไม่")
+            st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
+    else:
+        st.write("กดปุ่มด้านบนเพื่อเริ่มการคำนวณ")
 
-# ส่วนท้ายหน้าเว็บ
-st.divider()
-st.caption("หมายเหตุ: ราคาที่แสดงเป็นการประมาณการเบื้องต้นโดยอาศัยโมเดลทางสถิติ ไม่ควรใช้เป็นราคาอ้างอิงในการซื้อขายจริง")
+st.markdown("---")
+st.caption("พัฒนาโดยใช้ Streamlit และ Scikit-Learn | ข้อมูลอ้างอิงจาก California Housing Dataset")
