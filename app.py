@@ -10,19 +10,21 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import joblib
+import numpy as np
 
 # --- 1. ตั้งค่าหน้าตาแอป ---
 st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- 2. โหลด Full Pipeline ---
-# เราจะใช้แค่ตัวเดียวพอ เพราะใน Pipeline มันมี XGBoost ฝังอยู่ข้างในแล้วครับ
+# --- 2. โหลดโมเดลและ Pipeline ---
 @st.cache_resource
-def load_pipeline():
-    # ไฟล์นี้คือตัวเอกของเราครับ
-    return joblib.load('full_pipeline.pkl')
+def load_assets():
+    # โหลดทั้ง 2 อย่างมาทำงานร่วมกัน
+    pipeline = joblib.load('full_pipeline.pkl')
+    model = joblib.load('xgboost_house_price_model.pkl')
+    return pipeline, model
 
 try:
-    pipeline = load_pipeline()
+    full_pipeline, xgb_model = load_assets()
 except Exception as e:
     st.error(f"❌ โหลดไฟล์ไม่สำเร็จ: {e}")
     st.stop()
@@ -44,7 +46,7 @@ with st.sidebar:
 
 # --- 4. ปุ่มคำนวณ ---
 if st.button("🚀 คำนวณราคา"):
-    # สร้าง DataFrame 12 คอลัมน์ให้ตรงตามที่ Pipeline ต้องการ
+    # สร้างข้อมูล 12 คอลัมน์ดั้งเดิม
     input_df = pd.DataFrame([[
         longitude, latitude, housing_median_age, total_rooms,
         total_bedrooms, population, households, median_income,
@@ -58,9 +60,14 @@ if st.button("🚀 คำนวณราคา"):
     ])
 
     try:
-        # ใช้ pipeline.predict (ห้ามใช้ model.predict)
-        # ตัวนี้จะทำหน้าที่แปลงร่างข้อมูลจาก 12 -> 16 คอลัมน์ให้เราเอง
-        prediction = pipeline.predict(input_df)[0]
+        # Step A: ใช้ Pipeline แปลงข้อมูลให้เป็น 16 คอลัมน์ (ตัวเลขล้วน)
+        X_prepared = full_pipeline.transform(input_df)
+
+        # Step B: แปลงเป็น Numpy Array เพื่อลบชื่อคอลัมน์ (แก้ปัญหา f0, f1, f2)
+        X_prepared_no_names = np.array(X_prepared)
+
+        # Step C: ทำนายผล
+        prediction = xgb_model.predict(X_prepared_no_names)[0]
 
         st.balloons()
         st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
