@@ -10,66 +10,61 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import joblib
-import xgboost as xgb
+import os
 
-# --- 1. ตั้งค่าหน้าตาแอป ---
-st.set_page_config(page_title="California Housing Predictor", page_icon="🏠", layout="wide")
+st.set_page_config(page_title="Housing Predictor", layout="wide")
 
-# --- 2. โหลด Full Pipeline (สำคัญมาก: ต้องใช้ไฟล์ full_pipeline.pkl) ---
+# --- ส่วนเช็คไฟล์ (ช่วย Debug) ---
+st.sidebar.write("📁 ไฟล์ที่ระบบมองเห็นตอนนี้:")
+st.sidebar.write(os.listdir("."))
+
+# --- โหลดโมเดล ---
 @st.cache_resource
 def load_all_in_one():
-    # เราจะใช้ไฟล์นี้เพราะมันรวมทั้งการสเกลข้อมูลและ XGBoost ไว้ด้วยกันครับ
-    model = joblib.load('full_pipeline.pkl')
-    return model
+    # ตรวจสอบชื่อไฟล์ใน GitHub ให้ตรงกับบรรทัดล่างนี้
+    model_file = 'full_pipeline.pkl'
+    if os.path.exists(model_file):
+        return joblib.load(model_file)
+    else:
+        return None
 
-try:
-    pipeline = load_all_in_one()
-except Exception as e:
-    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
+pipeline = load_all_in_one()
 
-# --- 3. ส่วน UI สำหรับกรอกข้อมูล ---
-st.title("🏠 ระบบประเมินราคาที่พักอาศัย (California)")
-st.sidebar.header("📍 ระบุข้อมูลที่พัก")
+if pipeline is None:
+    st.error("❌ หาไฟล์ 'full_pipeline.pkl' ไม่พบ! กรุณาเช็คชื่อไฟล์บน GitHub ว่าเขียนตรงกันหรือไม่")
+    st.stop() # หยุดการทำงานถ้าไม่มีไฟล์
+
+# --- UI และการทำนาย ---
+st.title("🏠 California Housing Predictor")
 
 with st.sidebar:
+    st.header("📍 ข้อมูลที่พัก")
     longitude = st.number_input("Longitude", value=-122.23)
     latitude = st.number_input("Latitude", value=37.88)
-    housing_median_age = st.slider("อายุบ้าน (ปี)", 1, 52, 30)
-    total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=800)
-    total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=130)
-    population = st.number_input("จำนวนประชากร", value=320)
-    households = st.number_input("จำนวนครัวเรือน", value=120)
-    median_income = st.number_input("รายได้เฉลี่ย (x$10k)", value=8.3)
+    housing_median_age = st.number_input("อายุบ้าน", value=30)
+    total_rooms = st.number_input("ห้องทั้งหมด", value=800)
+    total_bedrooms = st.number_input("ห้องนอนทั้งหมด", value=130)
+    population = st.number_input("ประชากร", value=320)
+    households = st.number_input("ครัวเรือน", value=120)
+    median_income = st.number_input("รายได้เฉลี่ย", value=8.3)
     ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
 
-# --- 4. ปุ่มคำนวณและประมวลผล ---
-if st.button("🚀 คำนวณราคาประเมิน", use_container_width=True):
-    # เตรียม DataFrame ให้มีคอลัมน์เหมือนตอน Train เป๊ะๆ
-    input_df = pd.DataFrame([[
-        longitude, latitude, housing_median_age, total_rooms,
-        total_bedrooms, population, households, median_income, ocean_proximity
-    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
-                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
-
-    # ทำ Feature Engineering เพิ่มเติม (เพื่อให้ครบ 12 ฟีเจอร์ตามที่โมเดลต้องการ)
-    input_df["rooms_per_household"] = input_df["total_rooms"] / input_df["households"]
-    input_df["bedrooms_per_room"] = input_df["total_bedrooms"] / input_df["total_rooms"]
-    input_df["population_per_household"] = input_df["population"] / input_df["households"]
-
-    # จัดเรียงคอลัมน์ให้ตรงตามลำดับ Pipeline (12 ตัว)
-    column_order = [
-        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
-        'total_bedrooms', 'population', 'households', 'median_income',
-        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
-        'ocean_proximity'
-    ]
-    input_df = input_df[column_order]
+if st.button("🚀 คำนวณราคา"):
+    # สร้าง DataFrame 12 คอลัมน์ตามที่โมเดลต้องการ
+    data = {
+        'longitude': [longitude], 'latitude': [latitude],
+        'housing_median_age': [housing_median_age], 'total_rooms': [total_rooms],
+        'total_bedrooms': [total_bedrooms], 'population': [population],
+        'households': [households], 'median_income': [median_income],
+        'rooms_per_household': [total_rooms / households],
+        'bedrooms_per_room': [total_bedrooms / total_rooms],
+        'population_per_household': [population / households],
+        'ocean_proximity': [ocean_proximity]
+    }
+    input_df = pd.DataFrame(data)
 
     try:
-        # ทำนายผล (Pipeline จะจัดการ One-Hot ให้เองอัตโนมัติ)
         prediction = pipeline.predict(input_df)[0]
-
-        st.balloons()
-        st.success(f"### 🎉 ราคาประเมินคือ: ${prediction:,.2f}")
+        st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
