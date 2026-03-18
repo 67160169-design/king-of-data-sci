@@ -10,35 +10,27 @@ Original file is located at
 import streamlit as st
 import pandas as pd
 import joblib
-import os
 
-st.set_page_config(page_title="Housing Predictor", layout="wide")
+# --- 1. ตั้งค่าหน้าตาแอป ---
+st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- ส่วนเช็คไฟล์ (ช่วย Debug) ---
-st.sidebar.write("📁 ไฟล์ที่ระบบมองเห็นตอนนี้:")
-st.sidebar.write(os.listdir("."))
-
-# --- โหลดโมเดล ---
+# --- 2. โหลด Full Pipeline ---
 @st.cache_resource
-def load_all_in_one():
-    # ตรวจสอบชื่อไฟล์ใน GitHub ให้ตรงกับบรรทัดล่างนี้
-    model_file = 'full_pipeline.pkl'
-    if os.path.exists(model_file):
-        return joblib.load(model_file)
-    else:
-        return None
+def load_pipeline():
+    # ไฟล์นี้รวมทุกอย่างไว้แล้ว ทั้งตัวแปลงข้อมูลและตัวทำนาย
+    return joblib.load('full_pipeline.pkl')
 
-pipeline = load_all_in_one()
+try:
+    pipeline = load_pipeline()
+except Exception as e:
+    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
+    st.stop()
 
-if pipeline is None:
-    st.error("❌ หาไฟล์ 'full_pipeline.pkl' ไม่พบ! กรุณาเช็คชื่อไฟล์บน GitHub ว่าเขียนตรงกันหรือไม่")
-    st.stop() # หยุดการทำงานถ้าไม่มีไฟล์
-
-# --- UI และการทำนาย ---
-st.title("🏠 California Housing Predictor")
+# --- 3. UI รับข้อมูลดิบ 9 ตัว ---
+st.title("🏠 ระบบประเมินราคาที่พักอาศัย")
+st.sidebar.header("📍 ระบุข้อมูล")
 
 with st.sidebar:
-    st.header("📍 ข้อมูลที่พัก")
     longitude = st.number_input("Longitude", value=-122.23)
     latitude = st.number_input("Latitude", value=37.88)
     housing_median_age = st.number_input("อายุบ้าน", value=30)
@@ -49,22 +41,22 @@ with st.sidebar:
     median_income = st.number_input("รายได้เฉลี่ย", value=8.3)
     ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
 
+# --- 4. ส่งข้อมูลให้ Pipeline ทำนาย ---
 if st.button("🚀 คำนวณราคา"):
-    # สร้าง DataFrame 12 คอลัมน์ตามที่โมเดลต้องการ
-    data = {
-        'longitude': [longitude], 'latitude': [latitude],
-        'housing_median_age': [housing_median_age], 'total_rooms': [total_rooms],
-        'total_bedrooms': [total_bedrooms], 'population': [population],
-        'households': [households], 'median_income': [median_income],
-        'rooms_per_household': [total_rooms / households],
-        'bedrooms_per_room': [total_bedrooms / total_rooms],
-        'population_per_household': [population / households],
-        'ocean_proximity': [ocean_proximity]
-    }
-    input_df = pd.DataFrame(data)
+    # ส่งแค่ 9 คอลัมน์เดิมๆ ที่ได้จากหน้าจอเลยครับ
+    # ตัว Pipeline จะไปสร้าง 'rooms_per_household' ฯลฯ ให้เองข้างใน
+    input_df = pd.DataFrame([[
+        longitude, latitude, housing_median_age, total_rooms,
+        total_bedrooms, population, households, median_income, ocean_proximity
+    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
+                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
 
     try:
+        # Pipeline จะจัดการ Preprocessing + XGBoost ให้จบในบรรทัดเดียว
         prediction = pipeline.predict(input_df)[0]
+
+        st.balloons()
         st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
+        st.info("ถ้ายัง Error เรื่อง feature_names ให้ลองเช็คว่าใน Colab ตอนสั่ง pipeline.fit(X, y) ตัว X มีกี่คอลัมน์ครับ")
