@@ -21,14 +21,14 @@ st.set_page_config(
 # --- โหลด Model ---
 @st.cache_resource
 def load_models():
-    # ใช้ไฟล์ที่คุณอัปโหลดมา (ตรวจสอบชื่อไฟล์ให้ตรง)
+    # ใช้ไฟล์โมเดลที่คุณอัปโหลดมา
     model = joblib.load('xgboost_house_price_model.pkl')
     return model
 
 try:
     full_pipeline_model = load_models()
 except Exception as e:
-    st.error(f"⚠️ ไม่พบไฟล์โมเดลหรือโหลดไม่ได้: {e}")
+    st.error(f"⚠️ ไม่พบไฟล์โมเดล: {e}")
 
 # --- ส่วนของ Sidebar ---
 st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
@@ -49,7 +49,7 @@ with st.sidebar:
     median_income = st.number_input("รายได้เฉลี่ย (x $10,000)", value=8.3, format="%.2f")
     ocean_proximity = st.selectbox(
         "ทำเลที่ตั้ง",
-        ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND']
+        ['<1H OCEAN', 'INLAND', 'ISLAND', 'NEAR BAY', 'NEAR OCEAN']
     )
 
 # --- ส่วนแสดงผลหลัก ---
@@ -72,30 +72,31 @@ with col2:
     st.warning("🚀 **การประมวลผล:**")
     if st.button("คำนวณราคาประเมินเดี๋ยวนี้", use_container_width=True):
 
-        # 1. สร้าง DataFrame เริ่มต้น (9 คอลัมน์แรก)
-        input_df = pd.DataFrame([[
-            longitude, latitude, housing_median_age, total_rooms,
-            total_bedrooms, population, households, median_income, ocean_proximity
-        ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
-                     'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
+        # 1. แปลงค่า ocean_proximity จากตัวหนังสือเป็นตัวเลข (Encoding)
+        # หมายเหตุ: ลำดับตัวเลขนี้ต้องตรงกับที่โมเดลถูกเทรนมา
+        ocean_mapping = {'<1H OCEAN': 0, 'INLAND': 1, 'ISLAND': 2, 'NEAR BAY': 3, 'NEAR OCEAN': 4}
+        ocean_encoded = ocean_mapping[ocean_proximity]
 
-        # 2. Feature Engineering (สร้างเพิ่มอีก 3 คอลัมน์ รวมเป็น 12)
-        input_df["rooms_per_household"] = input_df["total_rooms"] / input_df["households"]
-        input_df["bedrooms_per_room"] = input_df["total_bedrooms"] / input_df["total_rooms"]
-        input_df["population_per_household"] = input_df["population"] / input_df["households"]
+        # 2. สร้าง DataFrame (12 คอลัมน์ตามลำดับที่ XGBoost ต้องการ)
+        data = {
+            'longitude': [longitude],
+            'latitude': [latitude],
+            'housing_median_age': [housing_median_age],
+            'total_rooms': [total_rooms],
+            'total_bedrooms': [total_bedrooms],
+            'population': [population],
+            'households': [households],
+            'median_income': [median_income],
+            'rooms_per_household': [total_rooms / households],
+            'bedrooms_per_room': [total_bedrooms / total_rooms],
+            'population_per_household': [population / households],
+            'ocean_proximity': [ocean_encoded] # ส่งค่าตัวเลขเข้าไปแทนตัวหนังสือ
+        }
 
-        # 3. จัดลำดับคอลัมน์ให้ตรงตามที่โมเดลต้องการ (Critical Step!)
-        # ลำดับต้องเรียงตามที่ Error แจ้ง: 8 ตัวแรก -> 3 ตัวที่สร้างใหม่ -> ocean_proximity
-        column_order = [
-            'longitude', 'latitude', 'housing_median_age', 'total_rooms',
-            'total_bedrooms', 'population', 'households', 'median_income',
-            'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
-            'ocean_proximity'
-        ]
-        input_df = input_df[column_order]
+        input_df = pd.DataFrame(data)
 
         try:
-            # 4. ทำนายผล
+            # 3. ทำนายผล
             prediction = full_pipeline_model.predict(input_df)[0]
 
             st.balloons()
@@ -103,7 +104,6 @@ with col2:
             st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
 
         except Exception as e:
-            st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
-            st.info("คำแนะนำ: ตรวจสอบว่าโมเดลใน Pipeline รองรับข้อมูลประเภท Text (ocean_proximity) หรือไม่")
+            st.error(f"เกิดข้อผิดพลาด: {e}")
     else:
         st.write("กดปุ่มด้านบนเพื่อเริ่มการคำนวณ")
