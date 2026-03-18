@@ -13,8 +13,34 @@ import joblib
 import numpy as np
 import os
 
-# --- 1. ตั้งค่าหน้าตาแอป ---
-st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
+# --- 1. ตั้งค่าหน้าตาแอป (Modern Config) ---
+st.set_page_config(
+    page_title="California Housing Predictor",
+    page_icon="🏠",
+    layout="wide"
+)
+
+# Custom CSS เพื่อความสวยงาม
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 5px;
+        height: 3em;
+        background-color: #ff4b4b;
+        color: white;
+    }
+    .result-card {
+        padding: 20px;
+        border-radius: 10px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- 2. โหลด Assets ---
 @st.cache_resource
@@ -22,48 +48,50 @@ def load_assets():
     pipe_name = 'full_pipeline.pkl'
     model_name = 'xgboost_house_price_model.pkl'
 
-    # ตรวจสอบไฟล์ใน GitHub
     if not os.path.exists(pipe_name) or not os.path.exists(model_name):
-        st.error(f"❌ หาไฟล์โมเดลไม่เจอ! ตรวจสอบชื่อไฟล์ใน GitHub")
+        st.error(f"❌ ไม่พบไฟล์โมเดลใน Repository")
         st.stop()
 
     pipeline = joblib.load(pipe_name)
     model = joblib.load(model_name)
 
-    # บังคับล้างชื่อฟีเจอร์ใน XGBoost เพื่อแก้ปัญหา f0, f1 mismatch
     try:
         model.get_booster().feature_names = None
     except:
         pass
-
     return pipeline, model
 
-try:
-    full_pipeline, xgb_model = load_assets()
-except Exception as e:
-    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
-    st.info("ตรวจสอบเวอร์ชัน scikit-learn ใน requirements.txt")
-    st.stop()
+full_pipeline, xgb_model = load_assets()
 
-# --- 3. UI ส่วนรับข้อมูล ---
-st.title("🏠 ระบบประเมินราคาที่พักอาศัย")
+# --- 3. ส่วน UI ---
+st.title("🏠 California House Price Predictor")
+st.markdown("ระบบพยากรณ์ราคาบ้านในแคลิฟอร์เนียด้วย Machine Learning (XGBoost)")
+st.divider()
 
-with st.sidebar:
-    st.header("📍 ระบุข้อมูล")
-    longitude = st.number_input("Longitude", value=-122.23)
-    latitude = st.number_input("Latitude", value=37.88)
-    housing_median_age = st.number_input("อายุบ้าน", value=30.0)
-    total_rooms = st.number_input("ห้องทั้งหมด", value=800.0)
-    total_bedrooms = st.number_input("ห้องนอนทั้งหมด", value=130.0)
-    population = st.number_input("ประชากร", value=320.0)
-    households = st.number_input("ครัวเรือน", value=120.0)
-    median_income = st.number_input("รายได้เฉลี่ย", value=8.3)
-    ocean_proximity = st.selectbox("ทำเล", ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
+# สร้าง 2 คอลัมน์สำหรับ Input
+col1, col2 = st.columns(2)
 
-# --- 4. ส่วนคำนวณ (จุดที่แก้ Feature Mismatch) ---
-if st.button("🚀 คำนวณราคา"):
+with col1:
+    st.subheader("📍 ข้อมูลทำเลที่ตั้ง")
+    longitude = st.number_input("ลองจิจูด (Longitude)", value=-122.23, format="%.2f")
+    latitude = st.number_input("ละติจูด (Latitude)", value=37.88, format="%.2f")
+    ocean_proximity = st.selectbox("ทำเลที่ตั้ง (Ocean Proximity)",
+                                  ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
+
+with col2:
+    st.subheader("🏘️ ข้อมูลตัวบ้านและสังคม")
+    median_income = st.slider("รายได้เฉลี่ย (Median Income - $10k)", 0.5, 15.0, 8.3)
+    housing_median_age = st.number_input("อายุบ้านเฉลี่ย (ปี)", value=41)
+    total_rooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=880)
+    total_bedrooms = st.number_input("จำนวนห้องน้ำทั้งหมด", value=129)
+    population = st.number_input("จำนวนประชากรในพื้นที่", value=322)
+    households = st.number_input("จำนวนครัวเรือน", value=126)
+
+# --- 4. ส่วนคำนวณ ---
+st.divider()
+if st.button("🚀 วิเคราะห์ราคาบ้าน"):
     try:
-        # 1. สร้าง Data 12 คอลัมน์ตามที่ Pipeline ต้องการ
+        # เตรียมข้อมูล
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income,
@@ -76,17 +104,18 @@ if st.button("🚀 คำนวณราคา"):
             'ocean_proximity'
         ])
 
-        # 2. ให้ Pipeline แปลง 12 คอลัมน์ -> 16 คอลัมน์ (หัวใจสำคัญ!)
+        # Pipeline Transformation & Prediction
         X_prepared = full_pipeline.transform(input_df)
+        prediction = xgb_model.predict(X_prepared)[0]
 
-        # 3. แปลงเป็น Numpy Array เพื่อความชัวร์
-        X_prepared_flat = np.array(X_prepared)
-
-        # 4. ทำนายผล
-        prediction = xgb_model.predict(X_prepared_flat)[0]
-
+        # แสดงผลลัพธ์แบบสวยงาม
         st.balloons()
-        st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
+        st.markdown(f"""
+            <div class="result-card">
+                <h3 style='text-align: center; color: #1f77b4;'>ราคาประเมินที่ได้</h3>
+                <h1 style='text-align: center; color: #ff4b4b;'>${prediction:,.2f}</h1>
+            </div>
+        """, unsafe_allow_html=True)
 
     except Exception as e:
-        st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
