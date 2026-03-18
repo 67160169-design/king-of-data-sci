@@ -7,47 +7,39 @@ Original file is located at
     https://colab.research.google.com/drive/1LBDGqowg2x_WeRphGis5nStBpKczC4ca
 """
 
-# --- 1. ปรับตอนโหลดโมเดล (เพิ่มการล้างชื่อฟีเจอร์) ---
-@st.cache_resource
-def load_assets():
-    pipeline = joblib.load('full_pipeline.pkl')
-    model = joblib.load('xgboost_house_price_model.pkl')
-
-    # ล้างชื่อฟีเจอร์ออกให้หมด เพื่อป้องกัน Error f0, f1...
-    model.get_booster().feature_names = None
-    return pipeline, model
-
-# --- 2. ปรับตอนทำ Prediction ---
 if st.button("🚀 วิเคราะห์ราคาบ้าน"):
     try:
-        # เตรียมข้อมูล (เหมือนเดิม)
-        input_df = pd.DataFrame([[
+        # 1. ส่งเฉพาะข้อมูล "ดิบ" 9 ตัว (ตามที่เทรนมาตอนแรก)
+        # ไม่ต้องคำนวณหารเอง เพราะ Pipeline จะทำให้ครับ
+        raw_data = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income,
-            (total_rooms / households), (total_bedrooms / total_rooms), (population / households),
             ocean_proximity
         ]], columns=[
             'longitude', 'latitude', 'housing_median_age', 'total_rooms',
             'total_bedrooms', 'population', 'households', 'median_income',
-            'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
             'ocean_proximity'
         ])
 
-        # แปลงข้อมูลผ่าน Pipeline
-        X_prepared = full_pipeline.transform(input_df)
+        # 2. ให้ Pipeline แปลงร่างข้อมูล (มันจะสร้างคอลัมน์หาร และ One-hot ให้เองจนครบ 16)
+        X_prepared = full_pipeline.transform(raw_data)
 
-        # แปลงเป็น Numpy Array เพื่อความชัวร์ 100% ว่าไม่มีชื่อคอลัมน์ติดไป
+        # 3. แปลงเป็น Array เพื่อคุยกับ XGBoost
         if hasattr(X_prepared, "toarray"):
             X_prepared = X_prepared.toarray()
-        else:
-            X_prepared = np.array(X_prepared)
 
-        # ทำนายผล
+        # 4. Predict
         prediction = xgb_model.predict(X_prepared)[0]
 
-        # แสดงผลลัพธ์ (แบบตกแต่งสวยๆ)
+        # --- แสดงผลแบบสวยๆ ---
         st.balloons()
-        st.success(f"### ผลการประเมิน: ${prediction:,.2f}")
+        st.markdown(f"""
+            <div style="background-color: #ffffff; padding: 20px; border-radius: 10px; border-left: 5px solid #ff4b4b; box-shadow: 2px 2px 5px rgba(0,0,0,0.1);">
+                <h3 style="margin:0; color: #555;">ราคาประเมินที่ได้:</h3>
+                <h1 style="margin:0; color: #ff4b4b;">${prediction:,.2f}</h1>
+            </div>
+        """, unsafe_allow_html=True)
 
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาด: {e}")
+        st.info("ลองตรวจสอบว่ากรอกตัวเลขครบทุกช่องหรือยังครับ")
