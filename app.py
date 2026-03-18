@@ -18,22 +18,19 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- โหลด Pipeline และ Model (ปรับชื่อไฟล์ให้ตรงกับของคุณ) ---
+# --- โหลด Model ---
 @st.cache_resource
 def load_models():
-    # สมมติว่าคุณเซฟรวมไว้ในไฟล์เดียว หรือแยกกัน
-    # pipeline = joblib.load('full_pipeline.pkl')
-    # model = joblib.load('final_model.pkl')
-    # ในที่นี้ขอยกตัวอย่างแบบโหลดตัวแปรเดียวที่รวมทุกอย่างไว้
+    # ใช้ไฟล์ที่คุณอัปโหลดมา (ตรวจสอบชื่อไฟล์ให้ตรง)
     model = joblib.load('xgboost_house_price_model.pkl')
     return model
 
 try:
     full_pipeline_model = load_models()
-except:
-    st.error("⚠️ ไม่พบไฟล์โมเดล! กรุณาตรวจสอบว่ามีไฟล์ .pkl ใน Repository แล้ว")
+except Exception as e:
+    st.error(f"⚠️ ไม่พบไฟล์โมเดลหรือโหลดไม่ได้: {e}")
 
-# --- ส่วนของ Sidebar (แถบด้านข้างสำหรับกรอกข้อมูล) ---
+# --- ส่วนของ Sidebar ---
 st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
 
 with st.sidebar:
@@ -57,13 +54,8 @@ with st.sidebar:
 
 # --- ส่วนแสดงผลหลัก ---
 st.title("🏠 ระบบประเมินราคาที่พักอาศัยในแคลิฟอร์เนีย")
-st.markdown("""
-แอปพลิเคชันนี้ใช้โมเดล Machine Learning ในการทำนายราคาบ้าน
-โดยคำนวณจากปัจจัยทางภูมิศาสตร์ ประชากร และรายได้ในพื้นที่นั้นๆ
----
-""")
+st.markdown("---")
 
-# สร้าง Layout แบบ 2 คอลัมน์สำหรับแสดงข้อมูลสรุป
 col1, col2 = st.columns(2)
 
 with col1:
@@ -79,30 +71,31 @@ with col1:
 with col2:
     st.warning("🚀 **การประมวลผล:**")
     if st.button("คำนวณราคาประเมินเดี๋ยวนี้", use_container_width=True):
-        # 1. สร้าง DataFrame
+
+        # 1. สร้าง DataFrame เริ่มต้น (9 คอลัมน์แรก)
         input_df = pd.DataFrame([[
             longitude, latitude, housing_median_age, total_rooms,
             total_bedrooms, population, households, median_income, ocean_proximity
         ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
                      'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
 
-        # 2. Feature Engineering
+        # 2. Feature Engineering (สร้างเพิ่มอีก 3 คอลัมน์ รวมเป็น 12)
         input_df["rooms_per_household"] = input_df["total_rooms"] / input_df["households"]
         input_df["bedrooms_per_room"] = input_df["total_bedrooms"] / input_df["total_rooms"]
         input_df["population_per_household"] = input_df["population"] / input_df["households"]
 
-        # 3. จัดลำดับคอลัมน์
-        order = [
+        # 3. จัดลำดับคอลัมน์ให้ตรงตามที่โมเดลต้องการ (Critical Step!)
+        # ลำดับต้องเรียงตามที่ Error แจ้ง: 8 ตัวแรก -> 3 ตัวที่สร้างใหม่ -> ocean_proximity
+        column_order = [
             'longitude', 'latitude', 'housing_median_age', 'total_rooms',
             'total_bedrooms', 'population', 'households', 'median_income',
             'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
             'ocean_proximity'
         ]
-        input_df = input_df[order]
+        input_df = input_df[column_order]
 
-        # 4. ทำนายผล
         try:
-            # ใช้ pipeline หรือ model ทำนาย (ปรับตามความเหมาะสมของไฟล์ .pkl คุณ)
+            # 4. ทำนายผล
             prediction = full_pipeline_model.predict(input_df)[0]
 
             st.balloons()
@@ -111,8 +104,6 @@ with col2:
 
         except Exception as e:
             st.error(f"เกิดข้อผิดพลาดในการคำนวณ: {e}")
+            st.info("คำแนะนำ: ตรวจสอบว่าโมเดลใน Pipeline รองรับข้อมูลประเภท Text (ocean_proximity) หรือไม่")
     else:
         st.write("กดปุ่มด้านบนเพื่อเริ่มการคำนวณ")
-
-st.markdown("---")
-st.caption("พัฒนาโดยใช้ Streamlit และ Scikit-Learn | ข้อมูลอ้างอิงจาก California Housing Dataset")
