@@ -15,10 +15,10 @@ import numpy as np
 # --- 1. ตั้งค่าหน้าตาแอป ---
 st.set_page_config(page_title="California Housing Predictor", page_icon="🏠")
 
-# --- 2. โหลดโมเดลและ Pipeline ---
+# --- 2. โหลด Assets ---
 @st.cache_resource
 def load_assets():
-    # โหลดทั้ง 2 อย่างมาทำงานร่วมกัน
+    # โหลดทั้ง Pipeline และ Model แยกกันเพื่อควบคุมการส่งข้อมูล
     pipeline = joblib.load('full_pipeline.pkl')
     model = joblib.load('xgboost_house_price_model.pkl')
     return pipeline, model
@@ -29,11 +29,12 @@ except Exception as e:
     st.error(f"❌ โหลดไฟล์ไม่สำเร็จ: {e}")
     st.stop()
 
-# --- 3. UI รับข้อมูล ---
+# --- 3. ส่วน UI ---
 st.title("🏠 ระบบประเมินราคาที่พักอาศัย")
-st.sidebar.header("📍 ระบุข้อมูล")
+st.markdown("กรอกข้อมูลด้านซ้ายเพื่อประเมินราคา")
 
 with st.sidebar:
+    st.header("📍 ระบุข้อมูล")
     longitude = st.number_input("Longitude", value=-122.23)
     latitude = st.number_input("Latitude", value=37.88)
     housing_median_age = st.number_input("อายุบ้าน", value=30)
@@ -46,31 +47,33 @@ with st.sidebar:
 
 # --- 4. ปุ่มคำนวณ ---
 if st.button("🚀 คำนวณราคา"):
-    # สร้างข้อมูล 12 คอลัมน์ดั้งเดิม
-    input_df = pd.DataFrame([[
-        longitude, latitude, housing_median_age, total_rooms,
-        total_bedrooms, population, households, median_income,
-        (total_rooms / households), (total_bedrooms / total_rooms), (population / households),
-        ocean_proximity
-    ]], columns=[
-        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
-        'total_bedrooms', 'population', 'households', 'median_income',
-        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
-        'ocean_proximity'
-    ])
-
     try:
-        # Step A: ใช้ Pipeline แปลงข้อมูลให้เป็น 16 คอลัมน์ (ตัวเลขล้วน)
+        # สร้างข้อมูล 12 คอลัมน์ตามโครงสร้างเดิม
+        input_df = pd.DataFrame([[
+            longitude, latitude, housing_median_age, total_rooms,
+            total_bedrooms, population, households, median_income,
+            (total_rooms / households), (total_bedrooms / total_rooms), (population / households),
+            ocean_proximity
+        ]], columns=[
+            'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+            'total_bedrooms', 'population', 'households', 'median_income',
+            'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+            'ocean_proximity'
+        ])
+
+        # STEP A: ใช้ Pipeline แปลงข้อมูลดิบให้เป็นตัวเลข 16 คอลัมน์ (Scaling + One-Hot)
         X_prepared = full_pipeline.transform(input_df)
 
-        # Step B: แปลงเป็น Numpy Array เพื่อลบชื่อคอลัมน์ (แก้ปัญหา f0, f1, f2)
-        X_prepared_no_names = np.array(X_prepared)
+        # STEP B: แปลงเป็น Numpy Array เพื่อ "ลบชื่อคอลัมน์" ออก (แก้ปัญหา mismatch f0, f1, f2)
+        X_prepared_flat = np.array(X_prepared)
 
-        # Step C: ทำนายผล
-        prediction = xgb_model.predict(X_prepared_no_names)[0]
+        # STEP C: ส่งตัวเลขเพียวๆ ให้ XGBoost ทำนาย
+        prediction = xgb_model.predict(X_prepared_flat)[0]
 
         st.balloons()
-        st.success(f"### 🎉 ราคาประเมิน: ${prediction:,.2f}")
+        st.success("### 🎉 คำนวณสำเร็จ!")
+        st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
 
     except Exception as e:
         st.error(f"⚠️ เกิดข้อผิดพลาด: {e}")
+        st.info("ลองตรวจสอบว่าเลือกทำเล (Ocean Proximity) ตรงกับที่มีในฐานข้อมูลหรือไม่")
