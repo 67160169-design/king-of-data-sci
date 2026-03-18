@@ -21,7 +21,7 @@ st.set_page_config(
 # --- โหลด Model ---
 @st.cache_resource
 def load_models():
-    # ใช้ไฟล์โมเดลที่คุณอัปโหลดมา
+    # โหลดโมเดลจากไฟล์ที่คุณอัปโหลด
     model = joblib.load('xgboost_house_price_model.pkl')
     return model
 
@@ -47,6 +47,7 @@ with st.sidebar:
 
     st.subheader("เศรษฐกิจและทำเล")
     median_income = st.number_input("รายได้เฉลี่ย (x $10,000)", value=8.3, format="%.2f")
+    # ตัวเลือกทำเลตามชุดข้อมูล California Housing
     ocean_proximity = st.selectbox(
         "ทำเลที่ตั้ง",
         ['<1H OCEAN', 'INLAND', 'ISLAND', 'NEAR BAY', 'NEAR OCEAN']
@@ -72,28 +73,26 @@ with col2:
     st.warning("🚀 **การประมวลผล:**")
     if st.button("คำนวณราคาประเมินเดี๋ยวนี้", use_container_width=True):
 
-        # 1. แปลงค่า ocean_proximity จากตัวหนังสือเป็นตัวเลข (Encoding)
-        # หมายเหตุ: ลำดับตัวเลขนี้ต้องตรงกับที่โมเดลถูกเทรนมา
-        ocean_mapping = {'<1H OCEAN': 0, 'INLAND': 1, 'ISLAND': 2, 'NEAR BAY': 3, 'NEAR OCEAN': 4}
-        ocean_encoded = ocean_mapping[ocean_proximity]
-
-        # 2. สร้าง DataFrame (12 คอลัมน์ตามลำดับที่ XGBoost ต้องการ)
+        # 1. สร้าง DataFrame พร้อมคำนวณฟีเจอร์ใหม่ให้ครบ 12 คอลัมน์
         data = {
-            'longitude': [longitude],
-            'latitude': [latitude],
-            'housing_median_age': [housing_median_age],
-            'total_rooms': [total_rooms],
-            'total_bedrooms': [total_bedrooms],
-            'population': [population],
-            'households': [households],
-            'median_income': [median_income],
-            'rooms_per_household': [total_rooms / households],
-            'bedrooms_per_room': [total_bedrooms / total_rooms],
-            'population_per_household': [population / households],
-            'ocean_proximity': [ocean_encoded] # ส่งค่าตัวเลขเข้าไปแทนตัวหนังสือ
+            'longitude': [float(longitude)],
+            'latitude': [float(latitude)],
+            'housing_median_age': [float(housing_median_age)],
+            'total_rooms': [float(total_rooms)],
+            'total_bedrooms': [float(total_bedrooms)],
+            'population': [float(population)],
+            'households': [float(households)],
+            'median_income': [float(median_income)],
+            'rooms_per_household': [float(total_rooms / households)],
+            'bedrooms_per_room': [float(total_bedrooms / total_rooms)],
+            'population_per_household': [float(population / households)],
+            'ocean_proximity': [ocean_proximity]
         }
 
         input_df = pd.DataFrame(data)
+
+        # 2. แก้ไขจุดที่เป็น Error: แปลง ocean_proximity ให้เป็น 'category' ตามที่ XGBoost ต้องการ
+        input_df['ocean_proximity'] = input_df['ocean_proximity'].astype('category')
 
         try:
             # 3. ทำนายผล
@@ -102,8 +101,3 @@ with col2:
             st.balloons()
             st.success("### 🎉 ผลการวิเคราะห์")
             st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
-
-        except Exception as e:
-            st.error(f"เกิดข้อผิดพลาด: {e}")
-    else:
-        st.write("กดปุ่มด้านบนเพื่อเริ่มการคำนวณ")
