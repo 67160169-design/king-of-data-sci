@@ -85,3 +85,4 @@ if st.sidebar.button("วิเคราะห์ราคา"):
 
     except Exception as e:
         st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
+
