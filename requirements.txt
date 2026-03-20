@@ -1,6 +1,15 @@
-streamlit
-pandas
+# Core Framework
+streamlit==1.42.0
+
+# Data Processing & ML Engine
+pandas>=2.0.0
+numpy>=1.24.0
 scikit-learn==1.6.1
-joblib
-xgboost
-numpy
+joblib==1.4.2
+
+# Model
+xgboost==2.1.3
+
+# (Optional) หากมีการทำ Visualization ในหน้า App
+matplotlib
+seaborn
