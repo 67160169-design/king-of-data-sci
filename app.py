@@ -7,31 +7,81 @@ Original file is located at
     https://colab.research.google.com/drive/1LBDGqowg2x_WeRphGis5nStBpKczC4ca
 """
 
-# --- แก้ไขส่วนการโหลด Model ---
+import streamlit as st
+import pandas as pd
+import joblib
+import numpy as np
+
+# --- การตั้งค่าหน้าตาแอป ---
+st.set_page_config(
+    page_title="California Housing Predictor",
+    page_icon="🏠",
+    layout="wide"
+)
+
+# --- โหลด Pipeline และ Model ---
 @st.cache_resource
-def load_models():
-    # โหลดทั้งตัวแปรที่จัดการข้อมูล (Pipeline) และตัวทำนาย (Model)
+def load_assets():
+    # โหลด pipeline สำหรับเตรียมข้อมูล (Scaling + One-Hot)
     pipeline = joblib.load('full.pipeline.pkl')
+    # โหลด model XGBoost
     model = joblib.load('xgboost_house_price_model.pkl')
     return pipeline, model
 
 try:
-    pipeline, model = load_models()
+    full_pipeline, xgboost_model = load_assets()
 except Exception as e:
-    st.error(f"⚠️ ไม่พบไฟล์โมเดล! {e}")
+    st.error(f"⚠️ ไม่พบไฟล์โมเดลหรือไฟล์เสีย! กรุณาตรวจสอบไฟล์ .pkl: {e}")
 
-# --- แก้ไขส่วนการทำนาย (Prediction) ---
+# --- ส่วนของ UI ---
+st.title("🏠 California Housing Price Predictor")
+st.write("ระบุข้อมูลด้านซ้ายมือเพื่อวิเคราะห์ราคาบ้าน")
+
+st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
+
+with st.sidebar:
+    longitude = st.number_input("Longitude", value=-122.23)
+    latitude = st.number_input("Latitude", value=37.88)
+    housing_median_age = st.slider("อายุบ้าน (ปี)", 1, 52, 20)
+    total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=880)
+    total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=129)
+    population = st.number_input("จำนวนประชากรในพื้นที่", value=322)
+    households = st.number_input("จำนวนครัวเรือน", value=126)
+    median_income = st.number_input("รายได้เฉลี่ย (หลักหมื่น USD)", value=8.32)
+    ocean_proximity = st.selectbox("ทำเลที่ตั้ง",
+                                 ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
+
 if st.sidebar.button("วิเคราะห์ราคา"):
-    # 1. สร้าง DataFrame (คุณทำไว้ดีแล้ว)
-    # ... (code สร้าง input_df เดิมของคุณ) ...
+    # 1. สร้าง DataFrame จากค่าที่รับมา
+    input_data = pd.DataFrame([[
+        longitude, latitude, housing_median_age, total_rooms,
+        total_bedrooms, population, households, median_income, ocean_proximity
+    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
+                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
+
+    # 2. Feature Engineering (ต้องทำให้เหมือนกับตอน Train)
+    input_data["rooms_per_household"] = input_data["total_rooms"] / input_data["households"]
+    input_data["bedrooms_per_room"] = input_data["total_bedrooms"] / input_data["total_rooms"]
+    input_data["population_per_household"] = input_data["population"] / input_data["households"]
+
+    # จัดลำดับคอลัมน์ให้ตรงกับที่ Pipeline ต้องการ
+    column_order = [
+        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+        'total_bedrooms', 'population', 'households', 'median_income',
+        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+        'ocean_proximity'
+    ]
+    input_df = input_data[column_order]
 
     try:
-        # ขั้นตอนที่สำคัญ: ต้องผ่าน pipeline ก่อนส่งให้ model
-        input_prepared = pipeline.transform(input_df)
-        prediction = model.predict(input_prepared)[0]
+        # 3. นำข้อมูลผ่าน Pipeline (Scaling & One-Hot Encoding)
+        input_prepared = full_pipeline.transform(input_df)
+
+        # 4. ทำนายผลด้วย XGBoost
+        prediction = xgboost_model.predict(input_prepared)[0]
 
         st.balloons()
-        st.success("### 🎉 ผลการวิเคราะห์")
-        st.metric(label="ราคาประเมินที่คาดการณ์", value=f"${prediction:,.2f}")
+        st.success(f"### 🎉 ราคาประเมินคือ: ${prediction:,.2f}")
+
     except Exception as e:
-        st.error(f"เกิดข้อผิดพลาด: {e}")
+        st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
