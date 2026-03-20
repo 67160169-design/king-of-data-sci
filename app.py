@@ -12,76 +12,124 @@ import pandas as pd
 import joblib
 import numpy as np
 
-# --- การตั้งค่าหน้าตาแอป ---
+# --- 1. การตั้งค่าหน้าตาแอป ---
 st.set_page_config(
-    page_title="California Housing Predictor",
+    page_title="California House Price AI",
     page_icon="🏠",
-    layout="wide"
+    layout="centered"
 )
 
-# --- โหลด Pipeline และ Model ---
+# Custom CSS เพื่อความสวยงาม
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7f9;
+    }
+    .stButton>button {
+        width: 100%;
+        border-radius: 10px;
+        height: 3em;
+        background-color: #FF4B4B;
+        color: white;
+        font-weight: bold;
+    }
+    .result-card {
+        padding: 20px;
+        border-radius: 15px;
+        background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        text-align: center;
+        border-left: 5px solid #FF4B4B;
+    }
+    </style>
+    """, unsafe_allow_stdio=True)
+
+# --- 2. โหลด Assets ---
 @st.cache_resource
 def load_assets():
-    # โหลด pipeline สำหรับเตรียมข้อมูล (Scaling + One-Hot)
     pipeline = joblib.load('full.pipeline.pkl')
-    # โหลด model XGBoost
     model = joblib.load('xgboost_house_price_model.pkl')
     return pipeline, model
 
 try:
     full_pipeline, xgboost_model = load_assets()
 except Exception as e:
-    st.error(f"⚠️ ไม่พบไฟล์โมเดลหรือไฟล์เสีย! กรุณาตรวจสอบไฟล์ .pkl: {e}")
+    st.error(f"⚠️ Error loading models: {e}")
 
-# --- ส่วนของ UI ---
-st.title("🏠 California Housing Price Predictor")
-st.write("ระบุข้อมูลด้านซ้ายมือเพื่อวิเคราะห์ราคาบ้าน")
+# --- 3. ส่วนหัวของเว็บ ---
+st.image("https://img.icons8.com/fluency/96/home.png", width=80)
+st.title("California Housing AI")
+st.subheader("ระบบประเมินราคาบ้านอัจฉริยะด้วย Machine Learning")
+st.markdown("---")
 
-st.sidebar.header("📍 ระบุข้อมูลที่พักอาศัย")
+# --- 4. ส่วนรับข้อมูล (Layout) ---
+st.info("💡 กรุณากรอกข้อมูลรายละเอียดบ้านด้านล่างเพื่อทำการประเมินราคา")
 
-with st.sidebar:
-    longitude = st.number_input("Longitude", value=-122.23)
-    latitude = st.number_input("Latitude", value=37.88)
+# แบ่งข้อมูลเป็น 2 คอลัมน์
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("### 📍 พิกัดและทำเล")
+    longitude = st.number_input("Longitude", value=-122.23, help="พิกัดเส้นแวง")
+    latitude = st.number_input("Latitude", value=37.88, help="พิกัดเส้นรุ้ง")
+    ocean_proximity = st.selectbox("ทำเลที่ตั้ง (Ocean Proximity)",
+                                 ['<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'NEAR BAY', 'ISLAND'])
+
+with col2:
+    st.markdown("### 🏠 รายละเอียดตัวบ้าน")
     housing_median_age = st.slider("อายุบ้าน (ปี)", 1, 52, 20)
-    total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=880)
-    total_bedrooms = st.number_input("จำนวนห้องนอนทั้งหมด", value=129)
-    population = st.number_input("จำนวนประชากรในพื้นที่", value=322)
-    households = st.number_input("จำนวนครัวเรือน", value=126)
-    median_income = st.number_input("รายได้เฉลี่ย (หลักหมื่น USD)", value=8.32)
-    ocean_proximity = st.selectbox("ทำเลที่ตั้ง",
-                                 ['NEAR BAY', '<1H OCEAN', 'INLAND', 'NEAR OCEAN', 'ISLAND'])
+    median_income = st.number_input("รายได้เฉลี่ย (หลักหมื่น USD/ปี)", value=5.0)
+    total_rooms = st.number_input("จำนวนห้องทั้งหมด", value=1000)
 
-if st.sidebar.button("วิเคราะห์ราคา"):
-    # 1. สร้าง DataFrame จากค่าที่รับมา
-    input_data = pd.DataFrame([[
-        longitude, latitude, housing_median_age, total_rooms,
-        total_bedrooms, population, households, median_income, ocean_proximity
-    ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
-                 'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
+with st.expander("➕ ข้อมูลเพิ่มเติม (คลิกเพื่อแก้ไข)"):
+    e_col1, e_col2, e_col3 = st.columns(3)
+    total_bedrooms = e_col1.number_input("ห้องนอน", value=200)
+    population = e_col2.number_input("ประชากรในพื้นที่", value=500)
+    households = e_col3.number_input("ครัวเรือน", value=150)
 
-    # 2. Feature Engineering (ต้องทำให้เหมือนกับตอน Train)
-    input_data["rooms_per_household"] = input_data["total_rooms"] / input_data["households"]
-    input_data["bedrooms_per_room"] = input_data["total_bedrooms"] / input_data["total_rooms"]
-    input_data["population_per_household"] = input_data["population"] / input_data["households"]
+st.markdown("---")
 
-    # จัดลำดับคอลัมน์ให้ตรงกับที่ Pipeline ต้องการ
-    column_order = [
-        'longitude', 'latitude', 'housing_median_age', 'total_rooms',
-        'total_bedrooms', 'population', 'households', 'median_income',
-        'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
-        'ocean_proximity'
-    ]
-    input_df = input_data[column_order]
+# --- 5. การประมวลผล ---
+if st.button("🚀 วิเคราะห์ราคาเดี๋ยวนี้"):
+    with st.spinner('กำลังคำนวณโดย AI...'):
+        # สร้าง DataFrame
+        input_data = pd.DataFrame([[
+            longitude, latitude, housing_median_age, total_rooms,
+            total_bedrooms, population, households, median_income, ocean_proximity
+        ]], columns=['longitude', 'latitude', 'housing_median_age', 'total_rooms',
+                     'total_bedrooms', 'population', 'households', 'median_income', 'ocean_proximity'])
 
-    try:
-        # 3. นำข้อมูลผ่าน Pipeline (Scaling & One-Hot Encoding)
-        input_prepared = full_pipeline.transform(input_df)
+        # Feature Engineering
+        input_data["rooms_per_household"] = input_data["total_rooms"] / (input_data["households"] + 1e-5)
+        input_data["bedrooms_per_room"] = input_data["total_bedrooms"] / (input_data["total_rooms"] + 1e-5)
+        input_data["population_per_household"] = input_data["population"] / (input_data["households"] + 1e-5)
 
-        # 4. ทำนายผลด้วย XGBoost
-        prediction = xgboost_model.predict(input_prepared)[0]
+        # จัดลำดับคอลัมน์
+        column_order = [
+            'longitude', 'latitude', 'housing_median_age', 'total_rooms',
+            'total_bedrooms', 'population', 'households', 'median_income',
+            'rooms_per_household', 'bedrooms_per_room', 'population_per_household',
+            'ocean_proximity'
+        ]
+        input_df = input_data[column_order]
 
-        st.balloons()
-        st.success(f"### 🎉 ราคาประเมินคือ: ${prediction:,.2f}")
+        try:
+            # Predict
+            input_prepared = full_pipeline.transform(input_df)
+            prediction = xgboost_model.predict(input_prepared)[0]
 
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
+            # แสดงผลลัพธ์
+            st.balloons()
+            st.markdown(f"""
+                <div class="result-card">
+                    <p style="margin:0; font-size:1.2em; color:#666;">ราคาประเมินที่คาดการณ์</p>
+                    <h1 style="margin:10px 0; color:#FF4B4B;">${prediction:,.2f}</h1>
+                    <p style="margin:0; font-size:0.9em; color:#888;">*ข้อมูลนี้เป็นการคำนวณเบื้องต้นจากโมเดล XGBoost</p>
+                </div>
+            """, unsafe_allow_stdio=True)
+
+        except Exception as e:
+            st.error(f"เกิดข้อผิดพลาด: {e}")
+
+# --- ฟุตเตอร์ ---
+st.markdown("<br><p style='text-align: center; color: #bfbfbf;'>Developed by AI Assistant | 2024</p>", unsafe_allow_stdio=True)
